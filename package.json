@@ -4,8 +4,18 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "esbuild --bundle --minify --target=es6 --outdir=public src/main.js",
+    "build:dev": "esbuild --watch --bundle --sourcemap --target=es6 --outdir=public src/main.js --servedir=public"
   },
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@types/three": "^0.163.0",
+    "esbuild": "^0.20.2",
+    "eslint": "^9.0.0"
+  },
+  "dependencies": {
+    "three": "^0.163.0"
+  }
 }
