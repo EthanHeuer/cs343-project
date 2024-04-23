@@ -1,83 +1,137 @@
 import * as THREE from "three";
 import Stats from "three/addons/libs/stats.module.js";
-import Camera from "./camera/camera.js";
-import { pixels } from "./utils.js";
-import { RoomEnvironment } from "three/examples/jsm/Addons.js";
-
-function generateVertexColors(geometry) {
-    const positionAttribute = geometry.attributes.position;
-
-    const colors = [];
-    const color = new THREE.Color();
-
-    for (let i = 0, il = positionAttribute.count; i < il; i++) {
-        color.setHSL(i / il * Math.random(), 0.5, 0.5);
-        colors.push(color.r, color.g, color.b);
-    }
-
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-}
+import { pixels, rgb } from "./utils.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+import Keyboard from "./keyboard.js";
+import { Water } from "three/addons/objects/Water.js";
 
 export default class App {
     scene = new THREE.Scene();
     renderer = new THREE.WebGLRenderer({ antialias: true });
     clock = new THREE.Clock();
-    camera = new Camera();
     stats = new Stats();
+    board = new Keyboard();
+    camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 5000);
+    controls;
     terrain;
-    container;
+    water;
 
     constructor(container) {
-        const { scene, renderer } = this;
+        const { scene, renderer, camera } = this;
 
-        const pmremGenerator = new THREE.PMREMGenerator(renderer);
-        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-
-        this.scene.background = new THREE.Color(0x72b6ed);
-
-        const ambientLight = new THREE.AmbientLight(0x000000);
-        scene.add(ambientLight);
-
-        const light1 = new THREE.DirectionalLight(0xffffff, 3);
-        light1.position.set(0, 200, 0);
-        scene.add(light1);
-
-        const light2 = new THREE.DirectionalLight(0xffffff, 3);
-        light2.position.set(100, 200, 100);
-        scene.add(light2);
-
-        const light3 = new THREE.DirectionalLight(0xffffff, 3);
-        light3.position.set(- 100, - 200, - 100);
-        scene.add(light3);
-
-        const loader = new THREE.TextureLoader();
-        const texture = loader.load("textures/height-maps/RandomLowRes.png", (texture) => {
-            const data = pixels(texture);
-
-            const worldWidth = 256;
-            const worldDepth = 256;
-
-            const plane = new THREE.PlaneGeometry(worldWidth, worldDepth, worldWidth - 1, worldDepth - 1);
-            plane.rotateX(-Math.PI / 2);
-
-            const vertices = plane.attributes.position.array;
-
-            for (let i = 0, j = 0, l = vertices.length; i < l; i++, j += 3) {
-                vertices[j + 1] = data[i * 4] / 255 * 32;
-            }
-
-            generateVertexColors(plane);
-
-            this.terrain = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({
-                map: texture
-            }));
-
-            scene.add(this.terrain);
-        });
+        // Renderer setup
 
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1;
+
         container.appendChild(renderer.domElement);
+        container.appendChild(this.stats.dom);
+
+        // Light setup
+
+        scene.add(new THREE.AmbientLight(rgb(0.1, 0.1, 0.1)));
+
+        const directionalLight = new THREE.DirectionalLight(rgb(1, 1, 1), 1);
+        directionalLight.castShadow = true;
+        directionalLight.target.position.set(1, -1, 1);
+        scene.add(directionalLight);
+
+        // Camera setup
+
+        this.controls = new PointerLockControls(camera, container);
+
+        scene.add(this.controls.getObject());
+
+        container.addEventListener("click", () => {
+            this.controls.lock();
+        });
+
+        // Skybox setup
+
+        const path = "textures/skybox/";
+        const format = ".jpg";
+        const urls = [
+            path + "px" + format, path + "nx" + format,
+            path + "py" + format, path + "ny" + format,
+            path + "pz" + format, path + "nz" + format
+        ];
+
+        const textureCube = new THREE.CubeTextureLoader().load(urls);
+        scene.background = textureCube;
+        scene.fog = new THREE.Fog(0xa0a0a0, 3000, 5000);
+
+        // Water setup
+
+        const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+
+        this.water = new Water(
+            waterGeometry,
+            {
+                textureWidth: 512,
+                textureHeight: 512,
+                waterNormals: new THREE.TextureLoader().load("textures/water/water-norm.jpg", (texture) => {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+
+                }),
+                waterColor: 0x001e0f,
+                distortionScale: 3
+            }
+        );
+        this.water.rotation.x = -Math.PI / 2;
+        this.water.material.transparent = true;
+
+        scene.add(this.water);
+
+        // Terrain setup
+
+        this.buildTerrain();
+    }
+
+    buildTerrain() {
+        const { scene } = this;
+
+        const texture = new THREE.TextureLoader().load("textures/heightmaps/TamrielLowRes.png", (texture) => {
+            const data = pixels(texture);
+            const { width, height } = texture.image;
+            const scalar = 32;
+
+            const planeGeometry = new THREE.PlaneGeometry(width * scalar, height * scalar, width - 1, height - 1);
+            planeGeometry.rotateX(-Math.PI / 2);
+
+            for (let i = 0; i < width * height; i++) {
+                planeGeometry.attributes.position.array[i * 3 + 1] = (data[i * 4] / 255) * 1600 - 700;
+            }
+
+            planeGeometry.computeVertexNormals();
+
+            const grassDiffuse = new THREE.TextureLoader().load("textures/grass/aerial_grass_rock_diff_4k.png");
+            grassDiffuse.wrapS = THREE.RepeatWrapping;
+            grassDiffuse.wrapT = THREE.RepeatWrapping;
+            grassDiffuse.colorSpace = THREE.LinearSRGBColorSpace;
+            grassDiffuse.repeat.set(40, 32);
+
+            const grassNormal = new THREE.TextureLoader().load("textures/grass/aerial_grass_rock_nor_4k.png");
+            grassNormal.wrapS = THREE.RepeatWrapping;
+            grassNormal.wrapT = THREE.RepeatWrapping;
+            grassNormal.colorSpace = THREE.LinearSRGBColorSpace;
+            grassNormal.repeat.set(40, 32);
+
+            this.terrain = new THREE.Mesh(planeGeometry, new THREE.MeshStandardMaterial({
+                metalness: 0,
+                roughness: 1,
+                map: grassDiffuse,
+                normalMap: grassNormal
+            }));
+            this.terrain.receiveShadow = true;
+
+            scene.add(this.terrain);
+
+            this.controls.getObject().position.y = 120;
+        });
     }
 
     animate() {
@@ -88,10 +142,46 @@ export default class App {
     }
 
     update() {
-        this.camera.update(this.clock.getDelta());
+        const { board: controller, controls, camera } = this;
+        const delta = this.clock.getDelta();
+
+        const velocity = new THREE.Vector3();
+        const speed = 1000;
+
+        if (controller.keys["w"]) {
+            velocity.z += 1;
+        }
+
+        if (controller.keys["s"]) {
+            velocity.z += -1;
+        }
+
+        if (controller.keys["a"]) {
+            velocity.x += -1;
+        }
+
+        if (controller.keys["d"]) {
+            velocity.x += 1;
+        }
+
+        velocity.normalize();
+
+        if (controller.keys[" "]) {
+            velocity.y += 1000;
+        }
+
+        if (controller.keys["shift"]) {
+            velocity.y += -1000;
+        }
+
+        controls.moveRight(velocity.x * speed * delta);
+        controls.moveForward(velocity.z * speed * delta);
+        controls.getObject().position.y += velocity.y * delta;
+
+        this.water.material.uniforms["time"].value += 1.0 / 60.0;
     }
 
     draw() {
-        this.renderer.render(this.scene, this.camera.perspectiveCamera);
+        this.renderer.render(this.scene, this.camera);
     }
 }
