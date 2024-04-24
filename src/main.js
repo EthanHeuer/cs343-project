@@ -15,3 +15,5 @@ if (!WebGL.isWebGLAvailable()) {
 
 const app = new App(root);
 app.animate();
+
+console.log(app);

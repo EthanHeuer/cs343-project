@@ -4,6 +4,8 @@ import { pixels, rgb } from "./utils.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import Keyboard from "./keyboard.js";
 import { Water } from "three/addons/objects/Water.js";
+import { Sky } from "three/addons/objects/Sky.js";
+import { GLTFLoader } from "three/examples/jsm/Addons.js";
 
 export default class App {
     scene = new THREE.Scene();
@@ -14,7 +16,11 @@ export default class App {
     camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 5000);
     controls;
     terrain;
+    sun;
+    sky;
     water;
+
+    SPEED = 5;
 
     constructor(container) {
         const { scene, renderer, camera } = this;
@@ -24,20 +30,27 @@ export default class App {
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1;
+        // renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
         container.appendChild(renderer.domElement);
         container.appendChild(this.stats.dom);
 
         // Light setup
 
-        scene.add(new THREE.AmbientLight(rgb(0.1, 0.1, 0.1)));
+        // scene.add(new THREE.AmbientLight(rgb(0.1, 0.1, 0.1)));
 
-        const directionalLight = new THREE.DirectionalLight(rgb(1, 1, 1), 1);
-        directionalLight.castShadow = true;
-        directionalLight.target.position.set(1, -1, 1);
-        scene.add(directionalLight);
+        // const directionalLight = new THREE.DirectionalLight(rgb(1, 1, 1), 5);
+        // directionalLight.castShadow = true;
+        // directionalLight.target.position.set(1, -1, 1);
+        // scene.add(directionalLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
+        hemiLight.position.set(0, 300, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+        dirLight.position.set(75, 300, -75);
+        scene.add(dirLight);
 
         // Camera setup
 
@@ -49,10 +62,85 @@ export default class App {
             this.controls.lock();
         });
 
-        // Skybox setup
+        // Setup world
+
+        this.sun = new THREE.Vector3();
+
+        this.buildWater();
+        //this.buildSky();
+        this.buildSkybox();
+        this.buildTerrain();
+
+        // Load models
+
+        const loader = new GLTFLoader();
+        loader.load("models/pony_cartoon/scene.gltf", (gltf) => {
+            const model = gltf.scene;
+            model.position.set(50, 55, 550);
+
+            scene.add(model);
+        }, undefined, (error) => {
+            console.error(error);
+        });
+
+        const loader2 = new GLTFLoader();
+        loader2.load("models/free_1975_porsche_911_930_turbo/scene.gltf", (gltf) => {
+            const model = gltf.scene;
+            model.position.set(50, 55, 560);
+
+            scene.add(model);
+        }, undefined, (error) => {
+            console.error(error);
+        });
+
+        this.controls.getObject().position.set(60, 57, 550);
+        this.controls.getObject().lookAt(50, 55, 550);
+
+        window.addEventListener("resize", this.onWindowResize.bind(this));
+    }
+
+    buildSky() {
+        const { scene, renderer } = this;
+
+        this.sky = new Sky();
+        this.sky.scale.setScalar(10000);
+        scene.add(this.sky);
+
+        const skyUniforms = this.sky.material.uniforms;
+
+        skyUniforms["turbidity"].value = 10;
+        skyUniforms["rayleigh"].value = 2;
+        skyUniforms["mieCoefficient"].value = 0.005;
+        skyUniforms["mieDirectionalG"].value = 0.8;
+
+        const parameters = {
+            elevation: 15,
+            azimuth: 180
+        };
+
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        const sceneEnv = new THREE.Scene();
+
+        const phi = THREE.MathUtils.degToRad(90 - parameters.elevation);
+        const theta = THREE.MathUtils.degToRad(parameters.azimuth);
+
+        this.sun.setFromSphericalCoords(1, phi, theta);
+        this.sky.material.uniforms["sunPosition"].value.copy(this.sun);
+        this.water.material.uniforms["sunDirection"].value.copy(this.sun).normalize();
+
+        sceneEnv.add(this.sky);
+        const renderTarget = pmremGenerator.fromScene(sceneEnv);
+        scene.add(this.sky);
+
+        scene.environment = renderTarget.texture;
+        scene.environmentIntensity = 0;
+    }
+
+    buildSkybox() {
+        const { scene } = this;
 
         const path = "textures/skybox/";
-        const format = ".jpg";
+        const format = ".png";
         const urls = [
             path + "px" + format, path + "nx" + format,
             path + "py" + format, path + "ny" + format,
@@ -62,63 +150,97 @@ export default class App {
         const textureCube = new THREE.CubeTextureLoader().load(urls);
         scene.background = textureCube;
         scene.fog = new THREE.Fog(0xa0a0a0, 3000, 5000);
+    }
 
-        // Water setup
+    buildWater() {
+        const { scene } = this;
 
-        const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+        const waterGeometry = new THREE.PlaneGeometry(640 * 32, 512 * 32, 1, 1);
 
         this.water = new Water(
             waterGeometry,
             {
                 textureWidth: 512,
                 textureHeight: 512,
-                waterNormals: new THREE.TextureLoader().load("textures/water/water-norm.jpg", (texture) => {
+                waterNormals: new THREE.TextureLoader().load("textures/water-norm.jpg", (texture) => {
                     texture.wrapS = THREE.RepeatWrapping;
                     texture.wrapT = THREE.RepeatWrapping;
 
                 }),
-                waterColor: 0x001e0f,
-                distortionScale: 3
+                waterColor: 0x0b4d52,
+                distortionScale: 10,
+                fog: true
             }
         );
         this.water.rotation.x = -Math.PI / 2;
         this.water.material.transparent = true;
 
         scene.add(this.water);
-
-        // Terrain setup
-
-        this.buildTerrain();
     }
 
     buildTerrain() {
         const { scene } = this;
 
-        const texture = new THREE.TextureLoader().load("textures/heightmaps/TamrielLowRes.png", (texture) => {
+        const loader = new THREE.TextureLoader();
+        // "TamrielLowRes"
+        const texture = loader.load("textures/temp.png", (texture) => {
             const data = pixels(texture);
             const { width, height } = texture.image;
-            const scalar = 32;
+            const scalar = 1;
 
             const planeGeometry = new THREE.PlaneGeometry(width * scalar, height * scalar, width - 1, height - 1);
             planeGeometry.rotateX(-Math.PI / 2);
 
+            const heightMap = [];
+
+            for (let i = 0; i < data.length; i += 4) {
+                heightMap.push(data[i] / 255);
+            }
+
+            const smoothHeightMap = [];
+            const radius = 9;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let sum = 0;
+                    let count = 0;
+
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        for (let dx = -radius; dx <= radius; dx++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+
+                            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                                sum += heightMap[ny * width + nx];
+                                count++;
+                            }
+                        }
+                    }
+
+                    smoothHeightMap[y * width + x] = sum / count;
+                }
+            }
+
             for (let i = 0; i < width * height; i++) {
-                planeGeometry.attributes.position.array[i * 3 + 1] = (data[i * 4] / 255) * 1600 - 700;
+                planeGeometry.attributes.position.array[i * 3 + 1] = smoothHeightMap[i] * 1600 - 700;
             }
 
             planeGeometry.computeVertexNormals();
 
-            const grassDiffuse = new THREE.TextureLoader().load("textures/grass/aerial_grass_rock_diff_4k.png");
+            const tileSize = 1;
+
+            const grassDiffuse = new THREE.TextureLoader().load("textures/grass/Grass_01.png");
             grassDiffuse.wrapS = THREE.RepeatWrapping;
             grassDiffuse.wrapT = THREE.RepeatWrapping;
-            grassDiffuse.colorSpace = THREE.LinearSRGBColorSpace;
-            grassDiffuse.repeat.set(40, 32);
+            grassDiffuse.colorSpace = THREE.SRGBColorSpace;
+            grassDiffuse.repeat.set(640 / tileSize, 512 / tileSize);
+            grassDiffuse.dispose();
 
-            const grassNormal = new THREE.TextureLoader().load("textures/grass/aerial_grass_rock_nor_4k.png");
+            const grassNormal = new THREE.TextureLoader().load("textures/grass/Grass_01_Nrm.png");
             grassNormal.wrapS = THREE.RepeatWrapping;
             grassNormal.wrapT = THREE.RepeatWrapping;
-            grassNormal.colorSpace = THREE.LinearSRGBColorSpace;
-            grassNormal.repeat.set(40, 32);
+            grassNormal.colorSpace = THREE.SRGBColorSpace;
+            grassNormal.repeat.set(640 / tileSize, 512 / tileSize);
+            grassNormal.dispose();
 
             this.terrain = new THREE.Mesh(planeGeometry, new THREE.MeshStandardMaterial({
                 metalness: 0,
@@ -129,9 +251,8 @@ export default class App {
             this.terrain.receiveShadow = true;
 
             scene.add(this.terrain);
-
-            this.controls.getObject().position.y = 120;
         });
+        texture.dispose();
     }
 
     animate() {
@@ -142,11 +263,10 @@ export default class App {
     }
 
     update() {
-        const { board: controller, controls, camera } = this;
+        const { board: controller, controls } = this;
         const delta = this.clock.getDelta();
 
         const velocity = new THREE.Vector3();
-        const speed = 1000;
 
         if (controller.keys["w"]) {
             velocity.z += 1;
@@ -167,21 +287,30 @@ export default class App {
         velocity.normalize();
 
         if (controller.keys[" "]) {
-            velocity.y += 1000;
+            velocity.y += 1;
         }
 
         if (controller.keys["shift"]) {
-            velocity.y += -1000;
+            velocity.y += -1;
         }
 
-        controls.moveRight(velocity.x * speed * delta);
-        controls.moveForward(velocity.z * speed * delta);
-        controls.getObject().position.y += velocity.y * delta;
+        controls.moveRight(velocity.x * this.SPEED * delta);
+        controls.moveForward(velocity.z * this.SPEED * delta);
+        controls.getObject().position.y += velocity.y * this.SPEED * delta;
 
         this.water.material.uniforms["time"].value += 1.0 / 60.0;
     }
 
     draw() {
         this.renderer.render(this.scene, this.camera);
+    }
+
+    onWindowResize() {
+        const { camera, renderer } = this;
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(window.innerWidth, window.innerHeight);
     }
 }

@@ -7,3 +7,5 @@
 *.jpeg binary
 *.bmp binary
 *.ico binary
+*.bin binary
+*.gltf binary
