@@ -3,8 +3,8 @@ export default class Keyboard {
     previousKeys = {};
 
     constructor() {
-        document.addEventListener("keydown", event => this.onKeyDown(event), false);
-        document.addEventListener("keyup", event => this.onKeyUp(event), false);
+        window.addEventListener("keydown", event => this.onKeyDown(event), false);
+        window.addEventListener("keyup", event => this.onKeyUp(event), false);
     }
 
     onKeyDown(event) {
