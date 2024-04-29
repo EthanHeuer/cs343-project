@@ -1,8 +1,8 @@
-import App from "./app.js";
+import App from "./components/app.js";
 import WebGL from "three/addons/capabilities/WebGL.js";
 
 (() => {
-    const root = document.body;
+    const root = document.getElementById("container");
 
     if (!root) {
         throw new Error("Root element not found");
