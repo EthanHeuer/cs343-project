@@ -21,9 +21,7 @@ export default [
             "vars-on-top": "error",
             "no-duplicate-imports": "error",
             "no-irregular-whitespace": "error",
-            "no-undef": "error",
-            //"no-unused-vars": "error",
-            "no-undefined": "error"
+            "no-undef": "error"
         }
     }
 ];
