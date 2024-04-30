@@ -1,13 +1,10 @@
 import * as THREE from "three";
 import Stats from "three/addons/libs/stats.module.js";
-import { loadGLTF, pixels, rgb } from "../utils.js";
+import { blurMap, loadGLTF, pixels, rgb } from "../utils.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import Keyboard from "./keyboard.js";
 import { Water } from "three/addons/objects/Water.js";
 import World from "./world.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPixelatedPass } from "three/addons/postprocessing/RenderPixelatedPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 
 export default class App {
@@ -26,7 +23,10 @@ export default class App {
     terrainMaterial;
     world;
 
-    movementSpeed = 10;
+    settings = {
+        movementSpeed: 10,
+        showFPS: true
+    };
 
     /**
      * @param {HTMLElement} container
@@ -41,15 +41,6 @@ export default class App {
         this.renderer.shadowMap.enabled = true;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.localClippingEnabled = true;
-
-        this.composer = new EffectComposer(this.renderer);
-        const renderPixelatedPass = new RenderPixelatedPass(4, this.scene, this.camera);
-        renderPixelatedPass.normalEdgeStrength = 0;
-        renderPixelatedPass.depthEdgeStrength = 100;
-        this.composer.addPass(renderPixelatedPass);
-
-        const outputPass = new OutputPass();
-        this.composer.addPass(outputPass);
 
         // CAMERA SETUP
 
@@ -73,10 +64,10 @@ export default class App {
         dirLight.shadow.mapSize.width = 2048;
         dirLight.shadow.mapSize.height = 2048;
         const d = 50;
-        dirLight.shadow.camera.left = - d;
+        dirLight.shadow.camera.left = -d;
         dirLight.shadow.camera.right = d;
         dirLight.shadow.camera.top = d;
-        dirLight.shadow.camera.bottom = - d;
+        dirLight.shadow.camera.bottom = -d;
         dirLight.shadow.camera.far = 3500;
         dirLight.shadow.bias = -0.0001;
         this.scene.add(dirLight);
@@ -85,10 +76,20 @@ export default class App {
         hemiLight.position.set(0, 1, 0);
         this.scene.add(hemiLight);
 
-        this.scene.fog = new THREE.Fog(new THREE.Color().setHSL(0.6, 0, 1), 1, 2000);
+        this.scene.fog = new THREE.Fog(new THREE.Color().setHSL(0.6, 0, 1), 1000, 2000);
 
         this.sun = new THREE.Vector3();
-        this.scene.background = createSkybox();
+
+        const path = "textures/skybox/";
+        const format = ".png";
+        const urls = [
+            path + "px" + format, path + "nx" + format,
+            path + "py" + format, path + "ny" + format,
+            path + "pz" + format, path + "nz" + format
+        ];
+
+        const textureCube = new THREE.CubeTextureLoader().load(urls);
+        this.scene.background = textureCube;
 
         const tileSize = 20480 / this.world.cellManager.cellSize;
         const grassDiff = loadTerrainTexture("textures/grass/grass-diff.png", tileSize);
@@ -165,9 +166,22 @@ export default class App {
         window.addEventListener("keyup", event => this.board.onKeyUp(event));
         window.addEventListener("resize", this.onWindowResize.bind(this));
 
-        const speed = { "Slow (x5)": 5, "Normal (x10)": 10, "Fast (x50)": 50, "Faster (x100)": 100, "Fastest (x500)": 500 };
+        const speed = {
+            "Slow (x5)": 5,
+            "Normal (x10)": 10,
+            "Fast (x50)": 50,
+            "Faster (x100)": 100,
+            "Fastest (x500)": 500
+        };
 
-        this.gui.add(this, "movementSpeed", speed);
+        this.gui.add(this.settings, "movementSpeed", speed);
+        this.gui.add(this.settings, "showFPS").onChange((value) => {
+            if (value) {
+                this.stats.dom.style.display = "block";
+            } else {
+                this.stats.dom.style.display = "none";
+            }
+        });
     }
 
     animate() {
@@ -209,9 +223,9 @@ export default class App {
             velocity.y += -1;
         }
 
-        controls.moveRight(velocity.x * this.movementSpeed * delta);
-        controls.moveForward(velocity.z * this.movementSpeed * delta);
-        controls.getObject().position.y += velocity.y * this.movementSpeed * delta;
+        controls.moveRight(velocity.x * this.settings.movementSpeed * delta);
+        controls.moveForward(velocity.z * this.settings.movementSpeed * delta);
+        controls.getObject().position.y += velocity.y * this.settings.movementSpeed * delta;
 
         this.water.material.uniforms["time"].value += 1.0 / 120.0;
 
@@ -225,15 +239,12 @@ export default class App {
 
     draw() {
         this.renderer.render(this.scene, this.camera);
-        //this.composer.render();
     }
 
     onWindowResize() {
-        const { camera, renderer } = this;
-
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 }
 
@@ -250,16 +261,14 @@ export default class App {
  * @param {(terrain: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>) => void} onLoad
  */
 App.prototype.buildTerrain = function (url, smoothingRadius, clipX, clipY, clipWidth, clipHeight, material, onLoad) {
-    const { scene, world } = this;
-
     const texture = new THREE.TextureLoader().load(url, (texture) => {
         const textureWidth = texture.image.width;
         const textureHeight = texture.image.height;
 
-        const scaleClipX = clipX / world.width * (textureWidth - 1);
-        const scaleClipY = clipY / world.height * (textureHeight - 1);
-        const scaleClipWidth = clipWidth / world.width * (textureWidth - 1) + 1;
-        const scaleClipHeight = clipHeight / world.height * (textureHeight - 1) + 1;
+        const scaleClipX = clipX / this.world.width * (textureWidth - 1);
+        const scaleClipY = clipY / this.world.height * (textureHeight - 1);
+        const scaleClipWidth = clipWidth / this.world.width * (textureWidth - 1) + 1;
+        const scaleClipHeight = clipHeight / this.world.height * (textureHeight - 1) + 1;
 
         const data = pixels(texture, scaleClipX - smoothingRadius, scaleClipY - smoothingRadius, scaleClipWidth + 2 * smoothingRadius, scaleClipHeight + 2 * smoothingRadius);
 
@@ -284,65 +293,12 @@ App.prototype.buildTerrain = function (url, smoothingRadius, clipX, clipY, clipW
         const terrain = new THREE.Mesh(planeGeometry, material);
         terrain.receiveShadow = true;
 
-        scene.add(terrain);
+        this.scene.add(terrain);
 
         onLoad(terrain);
     });
     texture.dispose();
 };
-
-
-
-function createSkybox() {
-    const path = "textures/skybox/";
-    const format = ".png";
-    const urls = [
-        path + "px" + format, path + "nx" + format,
-        path + "py" + format, path + "ny" + format,
-        path + "pz" + format, path + "nz" + format
-    ];
-
-    const textureCube = new THREE.CubeTextureLoader().load(urls);
-
-    return textureCube;
-}
-
-
-
-/**
- * @param {Iterable<number>} map
- * @param {number} width
- * @param {number} height
- * @param {number} radius - Blur radius for smoothing
- * @returns {Float32Array}
- */
-function blurMap(map, width, height, radius = 0) {
-    const mapCopy = new Float32Array(map);
-    const outMap = new Float32Array(map);
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            let sum = 0;
-            let count = 0;
-
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    const nx = x + dx;
-                    const ny = y + dy;
-
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                        sum += mapCopy[ny * width + nx];
-                        count++;
-                    }
-                }
-            }
-
-            outMap[y * width + x] = sum / count;
-        }
-    }
-
-    return outMap;
-}
 
 
 

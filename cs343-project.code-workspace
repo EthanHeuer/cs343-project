@@ -9,7 +9,9 @@
             "GLTF",
             "hemi",
             "metalness",
+            "outdir",
             "pmrem",
+            "servedir",
             "Skybox",
             "Tamriel"
         ]
