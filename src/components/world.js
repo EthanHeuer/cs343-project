@@ -1,46 +1,5 @@
 import * as THREE from "three";
-
-class Cell {
-    x;
-    y;
-    visible = false;
-    loading = false;
-
-    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
-    mesh;
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     */
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-    }
-}
-
-class CellManager {
-    centerCellX = 0;
-    centerCellY = 0;
-    cellSize;
-    radius;
-
-    /** @type {Cell[]} */
-    cells = [];
-
-    /**
-     * @param {number} cellSize
-     * @param {number} radius
-     */
-    constructor(cellSize, radius) {
-        this.cellSize = cellSize;
-        this.radius = radius;
-    }
-
-    get cellScale() {
-        return this.radius * this.cellSize;
-    }
-}
+import { Cell, CellManager } from "./cell-manager.js";
 
 export default class World {
     scene;
@@ -149,7 +108,6 @@ export default class World {
 
         // Create cells
 
-        let i = 0;
         for (let y = -this.cellManager.radius; y <= this.cellManager.radius; y++) {
             for (let x = -this.cellManager.radius; x <= this.cellManager.radius; x++) {
                 const dx = fx + x * this.cellManager.cellSize;
@@ -163,10 +121,11 @@ export default class World {
 
                     setTimeout(() => {
                         onCreate(cell);
-                    }, i * 10);
-                }
+                        this.cellManager.queue--;
+                    }, this.cellManager.queue * this.cellManager.queueDelay);
 
-                i++;
+                    this.cellManager.queue++;
+                }
             }
         }
 
@@ -176,7 +135,9 @@ export default class World {
             if (!cell.visible) {
                 this.scene.remove(cell.mesh);
             } else if (cell.mesh !== undefined) {
-                this.scene.add(cell.mesh);
+                if (!this.scene.children.includes(cell.mesh)) {
+                    this.scene.add(cell.mesh);
+                }
             }
         });
     }

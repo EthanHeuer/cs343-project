@@ -11,13 +11,6 @@ import { clamp } from "three/src/math/MathUtils.js";
  * @param {number | null} clipHeight - If null, the full height is used
  */
 function pixels(texture, clipX = 0, clipY = 0, clipWidth = null, clipHeight = null) {
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-        throw new Error("Canvas 2D context not available");
-    }
-
     const { image } = texture;
 
     if (clipWidth === null) {
@@ -27,9 +20,16 @@ function pixels(texture, clipX = 0, clipY = 0, clipWidth = null, clipHeight = nu
     if (clipHeight === null) {
         clipHeight = image.height;
     }
+    // const canvas = document.createElement("canvas");
+    // const context = canvas.getContext("2d");
 
-    canvas.width = clipWidth;
-    canvas.height = clipHeight;
+    const canvas = new OffscreenCanvas(clipWidth, clipHeight);
+
+    if (!canvas) {
+        throw new Error("Browser does not support OffscreenCanvas");
+    }
+
+    const context = canvas.getContext("2d");
 
     context.drawImage(image, clipX, clipY, clipWidth, clipHeight, 0, 0, clipWidth, clipHeight);
 

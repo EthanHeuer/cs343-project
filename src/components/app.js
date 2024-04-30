@@ -22,6 +22,7 @@ export default class App {
     terrain;
     terrainMaterial;
     world;
+    worker;
 
     settings = {
         movementSpeed: 10,
@@ -50,7 +51,7 @@ export default class App {
 
         // WORLD SETUP
 
-        this.world = new World(this.scene, 640 * 32, 512 * 32, 128, 5);
+        this.world = new World(this.scene, 640 * 32, 512 * 32, 512, 1);
 
         this.controls.getObject().position.set(10290, 10, 8920);
 
@@ -182,6 +183,8 @@ export default class App {
                 this.stats.dom.style.display = "none";
             }
         });
+
+        this.worker = new Worker("./worker.js");
     }
 
     animate() {
