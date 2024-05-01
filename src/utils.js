@@ -20,16 +20,12 @@ function pixels(texture, clipX = 0, clipY = 0, clipWidth = null, clipHeight = nu
     if (clipHeight === null) {
         clipHeight = image.height;
     }
-    // const canvas = document.createElement("canvas");
-    // const context = canvas.getContext("2d");
 
-    const canvas = new OffscreenCanvas(clipWidth, clipHeight);
-
-    if (!canvas) {
-        throw new Error("Browser does not support OffscreenCanvas");
-    }
-
+    const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
+
+    canvas.width = clipWidth;
+    canvas.height = clipHeight;
 
     context.drawImage(image, clipX, clipY, clipWidth, clipHeight, 0, 0, clipWidth, clipHeight);
 
@@ -115,4 +111,48 @@ function blurMap(map, width, height, radius = 0) {
     return outMap;
 }
 
-export { pixels, rgb, rgbFloat, loadGLTF, blurMap };
+
+
+
+/**
+ * @param {number} x
+ * @param {number} y
+ * @param {number} width
+ * @param {number} height
+ * @param {number} widthSegments
+ * @param {number} heightSegments
+ * @param {number[]} heightMap
+ */
+function createPlane(x, y, width, height, widthSegments, heightSegments, heightMap) {
+    const geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate(x + 0.5 * width, 0, y + 0.5 * height);
+
+    for (let i = 0; i < geometry.attributes.position.array.length; i += 3) {
+        geometry.attributes.position.array[i + 1] = heightMap[i / 3];
+    }
+
+    geometry.computeVertexNormals();
+
+    return geometry;
+}
+
+
+
+/**
+ * @param {string} url
+ * @param {number} tileSize
+ */
+function loadTerrainTexture(url, tileSize) {
+    const texture = new THREE.TextureLoader().load(url, (texture) => {
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(641 / tileSize, 513 / tileSize);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 1;
+    });
+
+    return texture;
+}
+
+export { pixels, rgb, rgbFloat, loadGLTF, blurMap, createPlane, loadTerrainTexture };

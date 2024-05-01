@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { Cell, CellManager } from "./cell-manager.js";
+import { Water } from "three/addons/objects/Water.js";
 
 export default class World {
     scene;
@@ -12,6 +13,11 @@ export default class World {
 
     /** @type {THREE.Plane[]} */
     clippingPlanes = [];
+
+    sun;
+    water;
+    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
+    terrainMaterial;
 
     /**
      * @param {THREE.Scene} scene
@@ -33,6 +39,28 @@ export default class World {
             new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.cellManager.cellScale),
             new THREE.Plane(new THREE.Vector3(0, 0, -1), -this.cellManager.cellScale)
         ];
+
+        this.sun = new THREE.Vector3();
+
+        const waterGeometry = new THREE.PlaneGeometry(this.width, this.height, 100, 100);
+        this.water = new Water(
+            waterGeometry,
+            {
+                textureWidth: 512,
+                textureHeight: 512,
+                waterNormals: new THREE.TextureLoader().load("textures/water-norm.jpg", (texture) => {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                }),
+                waterColor: 0x05373b,
+                distortionScale: 2,
+                fog: true
+            }
+        );
+        this.water.rotation.x = -Math.PI / 2;
+        this.water.position.x = 0.5 * (640 * 32 + 1);
+        this.water.position.z = 0.5 * (512 * 32 + 1);
+        this.water.material.uniforms["size"].value = 2;
     }
 
     /**

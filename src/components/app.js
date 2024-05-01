@@ -1,9 +1,8 @@
 import * as THREE from "three";
 import Stats from "three/addons/libs/stats.module.js";
-import { blurMap, loadGLTF, pixels, rgb } from "../utils.js";
+import { blurMap, createPlane, loadGLTF, loadTerrainTexture, pixels, rgb } from "../utils.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import Keyboard from "./keyboard.js";
-import { Water } from "three/addons/objects/Water.js";
 import World from "./world.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 
@@ -16,13 +15,7 @@ export default class App {
     board = new Keyboard();
     camera;
     controls;
-    sun;
-    water;
-    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
-    terrain;
-    terrainMaterial;
     world;
-    worker;
 
     settings = {
         movementSpeed: 10,
@@ -36,7 +29,7 @@ export default class App {
 
         // RENDERER SETUP
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", precision: "highp"});
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
@@ -51,7 +44,7 @@ export default class App {
 
         // WORLD SETUP
 
-        this.world = new World(this.scene, 640 * 32, 512 * 32, 512, 1);
+        this.world = new World(this.scene, 640 * 32, 512 * 32, 128, 5);
 
         this.controls.getObject().position.set(10290, 10, 8920);
 
@@ -78,8 +71,6 @@ export default class App {
         this.scene.add(hemiLight);
 
         this.scene.fog = new THREE.Fog(new THREE.Color().setHSL(0.6, 0, 1), 1000, 2000);
-
-        this.sun = new THREE.Vector3();
 
         const path = "textures/skybox/";
         const format = ".png";
@@ -116,28 +107,7 @@ export default class App {
             terrain.translateY(-20);
         });
 
-        const waterGeometry = new THREE.PlaneGeometry(this.world.width, this.world.height, 100, 100);
-
-        this.water = new Water(
-            waterGeometry,
-            {
-                textureWidth: 512,
-                textureHeight: 512,
-                waterNormals: new THREE.TextureLoader().load("textures/water-norm.jpg", (texture) => {
-                    texture.wrapS = THREE.RepeatWrapping;
-                    texture.wrapT = THREE.RepeatWrapping;
-                }),
-                waterColor: 0x05373b,
-                distortionScale: 2,
-                fog: true
-            }
-        );
-        this.water.rotation.x = -Math.PI / 2;
-        this.water.position.x = 0.5 * (640 * 32 + 1);
-        this.water.position.z = 0.5 * (512 * 32 + 1);
-        this.water.material.uniforms["size"].value = 2;
-
-        this.scene.add(this.water);
+        this.scene.add(this.world.water);
 
         // LOAD MODELS
 
@@ -183,8 +153,6 @@ export default class App {
                 this.stats.dom.style.display = "none";
             }
         });
-
-        this.worker = new Worker("./worker.js");
     }
 
     animate() {
@@ -230,7 +198,7 @@ export default class App {
         controls.moveForward(velocity.z * this.settings.movementSpeed * delta);
         controls.getObject().position.y += velocity.y * this.settings.movementSpeed * delta;
 
-        this.water.material.uniforms["time"].value += 1.0 / 120.0;
+        this.world.water.material.uniforms["time"].value += 1.0 / 120.0;
 
         this.world.update(controls.getObject().position.x, controls.getObject().position.z, (cell) => {
             this.buildTerrain("height-maps/Tamriel-mid.png", 3, cell.x, cell.y, this.world.cellManager.cellSize, this.world.cellManager.cellSize, this.terrainMaterial, (terrain) => {
@@ -302,47 +270,3 @@ App.prototype.buildTerrain = function (url, smoothingRadius, clipX, clipY, clipW
     });
     texture.dispose();
 };
-
-
-
-
-/**
- * @param {number} x
- * @param {number} y
- * @param {number} width
- * @param {number} height
- * @param {number} widthSegments
- * @param {number} heightSegments
- * @param {number[]} heightMap
- */
-function createPlane(x, y, width, height, widthSegments, heightSegments, heightMap) {
-    const geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
-    geometry.rotateX(-Math.PI / 2);
-    geometry.translate(x + 0.5 * width, 0, y + 0.5 * height);
-
-    for (let i = 0; i < geometry.attributes.position.array.length; i += 3) {
-        geometry.attributes.position.array[i + 1] = heightMap[i / 3];
-    }
-
-    geometry.computeVertexNormals();
-
-    return geometry;
-}
-
-
-
-/**
- * @param {string} url
- * @param {number} tileSize
- */
-function loadTerrainTexture(url, tileSize) {
-    const texture = new THREE.TextureLoader().load(url, (texture) => {
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(641 / tileSize, 513 / tileSize);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = 1;
-    });
-
-    return texture;
-}

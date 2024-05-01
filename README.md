@@ -10,7 +10,7 @@ This project is a simple demo of height map rendering in WebGL using Three.js. T
 
 ## Optimizations
 
-A cell manager is used to optimize the rendering of high level of detail terrain. The terrain is divided into cells, and only the cells that are visible are rendered. Due to the limitations of the browser terrain generation and rendering hppe
+A cell manager is used to optimize the rendering of high level of detail terrain. The terrain is divided into cells, and only the cells that are visible are rendered.
 
 ## Assets
 
