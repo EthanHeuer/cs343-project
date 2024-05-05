@@ -6,7 +6,8 @@
     "checkJs": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext", "DOM"],
+    "noImplicitAny": true
   },
   "exclude": ["node_modules", "public"]
 }

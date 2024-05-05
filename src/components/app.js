@@ -6,8 +6,45 @@ import Keyboard from "./keyboard.js";
 import World from "./world.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 
+const movementSpeedOptions = {
+    "Slow (x5)": 5,
+    "Normal (x10)": 10,
+    "Fast (x50)": 50,
+    "Faster (x100)": 100,
+    "Fastest (x500)": 500
+};
+
+const powerPreferenceOptions = {
+    "Default": "default",
+    "Low Power": "low-power",
+    "High Performance": "high-performance"
+};
+
+const precisionOptions = {
+    "High": "highp",
+    "Medium": "mediump",
+    "Low": "lowp"
+};
+
+const cellSizeOptions = {
+    "64": 64,
+    "128": 128,
+    "256": 256,
+    "512": 512,
+    "1024": 1024
+};
+
+const radiusOptions = {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5
+};
+
 export default class App {
     renderer;
+    container;
     scene = new THREE.Scene();
     clock = new THREE.Clock();
     stats = new Stats();
@@ -18,18 +55,30 @@ export default class App {
     world;
 
     settings = {
-        movementSpeed: 10,
-        showFPS: true
+        misc: {
+            movementSpeed: 10,
+            showFPS: true
+        },
+        cellManager: {
+            cellSize: 128,
+            radius: 5
+        },
+        performance: {
+            antialias: true,
+            powerPreference: "high-performance",
+            precision: "highp"
+        }
     };
 
     /**
      * @param {HTMLElement} container
      */
     constructor(container) {
+        this.container = container;
 
         // RENDERER SETUP
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", precision: "highp"});
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", precision: "highp" });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
@@ -44,7 +93,7 @@ export default class App {
 
         // WORLD SETUP
 
-        this.world = new World(this.scene, 640 * 32, 512 * 32, 128, 5);
+        this.world = new World(this.scene, 640 * 32, 512 * 32, this.settings.cellManager.cellSize, this.settings.cellManager.radius);
 
         this.controls.getObject().position.set(10290, 10, 8920);
 
@@ -137,22 +186,7 @@ export default class App {
         window.addEventListener("keyup", event => this.board.onKeyUp(event));
         window.addEventListener("resize", this.onWindowResize.bind(this));
 
-        const speed = {
-            "Slow (x5)": 5,
-            "Normal (x10)": 10,
-            "Fast (x50)": 50,
-            "Faster (x100)": 100,
-            "Fastest (x500)": 500
-        };
-
-        this.gui.add(this.settings, "movementSpeed", speed);
-        this.gui.add(this.settings, "showFPS").onChange((value) => {
-            if (value) {
-                this.stats.dom.style.display = "block";
-            } else {
-                this.stats.dom.style.display = "none";
-            }
-        });
+        this.createGUI();
     }
 
     animate() {
@@ -194,9 +228,9 @@ export default class App {
             velocity.y += -1;
         }
 
-        controls.moveRight(velocity.x * this.settings.movementSpeed * delta);
-        controls.moveForward(velocity.z * this.settings.movementSpeed * delta);
-        controls.getObject().position.y += velocity.y * this.settings.movementSpeed * delta;
+        controls.moveRight(velocity.x * this.settings.misc.movementSpeed * delta);
+        controls.moveForward(velocity.z * this.settings.misc.movementSpeed * delta);
+        controls.getObject().position.y += velocity.y * this.settings.misc.movementSpeed * delta;
 
         this.world.water.material.uniforms["time"].value += 1.0 / 120.0;
 
@@ -269,4 +303,87 @@ App.prototype.buildTerrain = function (url, smoothingRadius, clipX, clipY, clipW
         onLoad(terrain);
     });
     texture.dispose();
+};
+
+
+
+App.prototype.createGUI = function () {
+
+    // MISC FOLDER
+
+    const folderMisc = this.gui.addFolder("Miscellaneous");
+
+    folderMisc.add(this.settings.misc, "movementSpeed", movementSpeedOptions);
+
+    folderMisc.add(this.settings.misc, "showFPS").onChange((value) => {
+        if (value) {
+            this.stats.dom.style.display = "block";
+        } else {
+            this.stats.dom.style.display = "none";
+        }
+    });
+
+    // CELL MANAGER FOLDER
+
+    const folderCellManager = this.gui.addFolder("Cell Manager");
+
+    folderCellManager.add(this.settings.cellManager, "cellSize", cellSizeOptions).onChange((value) => {
+        this.world.cellManager.cellSize = value;
+
+        this.world.cellManager.cells.forEach((cell) => {
+            this.scene.remove(cell.mesh);
+        });
+
+        this.world.cellManager.cells = [];
+    });
+
+    folderCellManager.add(this.settings.cellManager, "radius", radiusOptions).onChange((value) => {
+        this.world.cellManager.radius = value;
+
+        this.world.cellManager.cells.forEach((cell) => {
+            this.scene.remove(cell.mesh);
+        });
+
+        this.world.cellManager.cells = [];
+    });
+
+    // PERFORMANCE FOLDER
+
+    const folderPerformance = this.gui.addFolder("Performance");
+
+    folderPerformance.add(this.settings.performance, "powerPreference", powerPreferenceOptions).onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: this.settings.performance.antialias, powerPreference: value, precision: this.settings.performance.precision });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
+
+    folderPerformance.add(this.settings.performance, "precision", precisionOptions).onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: this.settings.performance.antialias, powerPreference: this.settings.performance.powerPreference, precision: value });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
+
+    folderPerformance.add(this.settings.performance, "antialias").onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: value, powerPreference: this.settings.performance.powerPreference, precision: this.settings.performance.precision });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
 };
