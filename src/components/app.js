@@ -1,14 +1,50 @@
 import * as THREE from "three";
 import Stats from "three/addons/libs/stats.module.js";
-import { blurMap, loadGLTF, pixels, rgb } from "../utils.js";
+import { blurMap, createPlane, loadGLTF, loadTerrainTexture, pixels, rgb } from "../utils.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import Keyboard from "./keyboard.js";
-import { Water } from "three/addons/objects/Water.js";
 import World from "./world.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 
+const movementSpeedOptions = {
+    "Slow (x5)": 5,
+    "Normal (x10)": 10,
+    "Fast (x50)": 50,
+    "Faster (x100)": 100,
+    "Fastest (x500)": 500
+};
+
+const powerPreferenceOptions = {
+    "Default": "default",
+    "Low Power": "low-power",
+    "High Performance": "high-performance"
+};
+
+const precisionOptions = {
+    "High": "highp",
+    "Medium": "mediump",
+    "Low": "lowp"
+};
+
+const cellSizeOptions = {
+    "64": 64,
+    "128": 128,
+    "256": 256,
+    "512": 512,
+    "1024": 1024
+};
+
+const radiusOptions = {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5
+};
+
 export default class App {
     renderer;
+    container;
     scene = new THREE.Scene();
     clock = new THREE.Clock();
     stats = new Stats();
@@ -16,26 +52,33 @@ export default class App {
     board = new Keyboard();
     camera;
     controls;
-    sun;
-    water;
-    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
-    terrain;
-    terrainMaterial;
     world;
 
     settings = {
-        movementSpeed: 10,
-        showFPS: true
+        misc: {
+            movementSpeed: 10,
+            showFPS: true
+        },
+        cellManager: {
+            cellSize: 128,
+            radius: 5
+        },
+        performance: {
+            antialias: true,
+            powerPreference: "high-performance",
+            precision: "highp"
+        }
     };
 
     /**
      * @param {HTMLElement} container
      */
     constructor(container) {
+        this.container = container;
 
         // RENDERER SETUP
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", precision: "highp" });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
@@ -50,7 +93,7 @@ export default class App {
 
         // WORLD SETUP
 
-        this.world = new World(this.scene, 640 * 32, 512 * 32, 128, 5);
+        this.world = new World(this.scene, 640 * 32, 512 * 32, this.settings.cellManager.cellSize, this.settings.cellManager.radius);
 
         this.controls.getObject().position.set(10290, 10, 8920);
 
@@ -77,8 +120,6 @@ export default class App {
         this.scene.add(hemiLight);
 
         this.scene.fog = new THREE.Fog(new THREE.Color().setHSL(0.6, 0, 1), 1000, 2000);
-
-        this.sun = new THREE.Vector3();
 
         const path = "textures/skybox/";
         const format = ".png";
@@ -115,28 +156,7 @@ export default class App {
             terrain.translateY(-20);
         });
 
-        const waterGeometry = new THREE.PlaneGeometry(this.world.width, this.world.height, 100, 100);
-
-        this.water = new Water(
-            waterGeometry,
-            {
-                textureWidth: 512,
-                textureHeight: 512,
-                waterNormals: new THREE.TextureLoader().load("textures/water-norm.jpg", (texture) => {
-                    texture.wrapS = THREE.RepeatWrapping;
-                    texture.wrapT = THREE.RepeatWrapping;
-                }),
-                waterColor: 0x05373b,
-                distortionScale: 2,
-                fog: true
-            }
-        );
-        this.water.rotation.x = -Math.PI / 2;
-        this.water.position.x = 0.5 * (640 * 32 + 1);
-        this.water.position.z = 0.5 * (512 * 32 + 1);
-        this.water.material.uniforms["size"].value = 2;
-
-        this.scene.add(this.water);
+        this.scene.add(this.world.water);
 
         // LOAD MODELS
 
@@ -166,22 +186,7 @@ export default class App {
         window.addEventListener("keyup", event => this.board.onKeyUp(event));
         window.addEventListener("resize", this.onWindowResize.bind(this));
 
-        const speed = {
-            "Slow (x5)": 5,
-            "Normal (x10)": 10,
-            "Fast (x50)": 50,
-            "Faster (x100)": 100,
-            "Fastest (x500)": 500
-        };
-
-        this.gui.add(this.settings, "movementSpeed", speed);
-        this.gui.add(this.settings, "showFPS").onChange((value) => {
-            if (value) {
-                this.stats.dom.style.display = "block";
-            } else {
-                this.stats.dom.style.display = "none";
-            }
-        });
+        this.createGUI();
     }
 
     animate() {
@@ -223,11 +228,11 @@ export default class App {
             velocity.y += -1;
         }
 
-        controls.moveRight(velocity.x * this.settings.movementSpeed * delta);
-        controls.moveForward(velocity.z * this.settings.movementSpeed * delta);
-        controls.getObject().position.y += velocity.y * this.settings.movementSpeed * delta;
+        controls.moveRight(velocity.x * this.settings.misc.movementSpeed * delta);
+        controls.moveForward(velocity.z * this.settings.misc.movementSpeed * delta);
+        controls.getObject().position.y += velocity.y * this.settings.misc.movementSpeed * delta;
 
-        this.water.material.uniforms["time"].value += 1.0 / 120.0;
+        this.world.water.material.uniforms["time"].value += 1.0 / 120.0;
 
         this.world.update(controls.getObject().position.x, controls.getObject().position.z, (cell) => {
             this.buildTerrain("height-maps/Tamriel-mid.png", 3, cell.x, cell.y, this.world.cellManager.cellSize, this.world.cellManager.cellSize, this.terrainMaterial, (terrain) => {
@@ -302,44 +307,83 @@ App.prototype.buildTerrain = function (url, smoothingRadius, clipX, clipY, clipW
 
 
 
+App.prototype.createGUI = function () {
 
-/**
- * @param {number} x
- * @param {number} y
- * @param {number} width
- * @param {number} height
- * @param {number} widthSegments
- * @param {number} heightSegments
- * @param {number[]} heightMap
- */
-function createPlane(x, y, width, height, widthSegments, heightSegments, heightMap) {
-    const geometry = new THREE.PlaneGeometry(width, height, widthSegments, heightSegments);
-    geometry.rotateX(-Math.PI / 2);
-    geometry.translate(x + 0.5 * width, 0, y + 0.5 * height);
+    // MISC FOLDER
 
-    for (let i = 0; i < geometry.attributes.position.array.length; i += 3) {
-        geometry.attributes.position.array[i + 1] = heightMap[i / 3];
-    }
+    const folderMisc = this.gui.addFolder("Miscellaneous");
 
-    geometry.computeVertexNormals();
+    folderMisc.add(this.settings.misc, "movementSpeed", movementSpeedOptions);
 
-    return geometry;
-}
-
-
-
-/**
- * @param {string} url
- * @param {number} tileSize
- */
-function loadTerrainTexture(url, tileSize) {
-    const texture = new THREE.TextureLoader().load(url, (texture) => {
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(641 / tileSize, 513 / tileSize);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = 1;
+    folderMisc.add(this.settings.misc, "showFPS").onChange((value) => {
+        if (value) {
+            this.stats.dom.style.display = "block";
+        } else {
+            this.stats.dom.style.display = "none";
+        }
     });
 
-    return texture;
-}
+    // CELL MANAGER FOLDER
+
+    const folderCellManager = this.gui.addFolder("Cell Manager");
+
+    folderCellManager.add(this.settings.cellManager, "cellSize", cellSizeOptions).onChange((value) => {
+        this.world.cellManager.cellSize = value;
+
+        this.world.cellManager.cells.forEach((cell) => {
+            this.scene.remove(cell.mesh);
+        });
+
+        this.world.cellManager.cells = [];
+    });
+
+    folderCellManager.add(this.settings.cellManager, "radius", radiusOptions).onChange((value) => {
+        this.world.cellManager.radius = value;
+
+        this.world.cellManager.cells.forEach((cell) => {
+            this.scene.remove(cell.mesh);
+        });
+
+        this.world.cellManager.cells = [];
+    });
+
+    // PERFORMANCE FOLDER
+
+    const folderPerformance = this.gui.addFolder("Performance");
+
+    folderPerformance.add(this.settings.performance, "powerPreference", powerPreferenceOptions).onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: this.settings.performance.antialias, powerPreference: value, precision: this.settings.performance.precision });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
+
+    folderPerformance.add(this.settings.performance, "precision", precisionOptions).onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: this.settings.performance.antialias, powerPreference: this.settings.performance.powerPreference, precision: value });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
+
+    folderPerformance.add(this.settings.performance, "antialias").onChange((value) => {
+        this.container.removeChild(this.renderer.domElement);
+        this.renderer.dispose();
+        this.renderer = new THREE.WebGLRenderer({ antialias: value, powerPreference: this.settings.performance.powerPreference, precision: this.settings.performance.precision });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.localClippingEnabled = true;
+        this.container.appendChild(this.renderer.domElement);
+    });
+};

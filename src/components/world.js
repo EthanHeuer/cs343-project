@@ -1,46 +1,6 @@
 import * as THREE from "three";
-
-class Cell {
-    x;
-    y;
-    visible = false;
-    loading = false;
-
-    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
-    mesh;
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     */
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-    }
-}
-
-class CellManager {
-    centerCellX = 0;
-    centerCellY = 0;
-    cellSize;
-    radius;
-
-    /** @type {Cell[]} */
-    cells = [];
-
-    /**
-     * @param {number} cellSize
-     * @param {number} radius
-     */
-    constructor(cellSize, radius) {
-        this.cellSize = cellSize;
-        this.radius = radius;
-    }
-
-    get cellScale() {
-        return this.radius * this.cellSize;
-    }
-}
+import { Cell, CellManager } from "./cell-manager.js";
+import { Water } from "three/addons/objects/Water.js";
 
 export default class World {
     scene;
@@ -53,6 +13,11 @@ export default class World {
 
     /** @type {THREE.Plane[]} */
     clippingPlanes = [];
+
+    sun;
+    water;
+    /** @type {THREE.Mesh<THREE.PlaneGeometry, THREE.Material>} */
+    terrainMaterial;
 
     /**
      * @param {THREE.Scene} scene
@@ -74,6 +39,28 @@ export default class World {
             new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.cellManager.cellScale),
             new THREE.Plane(new THREE.Vector3(0, 0, -1), -this.cellManager.cellScale)
         ];
+
+        this.sun = new THREE.Vector3();
+
+        const waterGeometry = new THREE.PlaneGeometry(this.width, this.height, 100, 100);
+        this.water = new Water(
+            waterGeometry,
+            {
+                textureWidth: 512,
+                textureHeight: 512,
+                waterNormals: new THREE.TextureLoader().load("textures/water-norm.jpg", (texture) => {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                }),
+                waterColor: 0x05373b,
+                distortionScale: 2,
+                fog: true
+            }
+        );
+        this.water.rotation.x = -Math.PI / 2;
+        this.water.position.x = 0.5 * (640 * 32 + 1);
+        this.water.position.z = 0.5 * (512 * 32 + 1);
+        this.water.material.uniforms["size"].value = 2;
     }
 
     /**
@@ -149,7 +136,6 @@ export default class World {
 
         // Create cells
 
-        let i = 0;
         for (let y = -this.cellManager.radius; y <= this.cellManager.radius; y++) {
             for (let x = -this.cellManager.radius; x <= this.cellManager.radius; x++) {
                 const dx = fx + x * this.cellManager.cellSize;
@@ -163,10 +149,11 @@ export default class World {
 
                     setTimeout(() => {
                         onCreate(cell);
-                    }, i * 10);
-                }
+                        this.cellManager.queue--;
+                    }, this.cellManager.queue * this.cellManager.queueDelay);
 
-                i++;
+                    this.cellManager.queue++;
+                }
             }
         }
 
@@ -176,7 +163,9 @@ export default class World {
             if (!cell.visible) {
                 this.scene.remove(cell.mesh);
             } else if (cell.mesh !== undefined) {
-                this.scene.add(cell.mesh);
+                if (!this.scene.children.includes(cell.mesh)) {
+                    this.scene.add(cell.mesh);
+                }
             }
         });
     }
