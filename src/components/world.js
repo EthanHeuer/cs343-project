@@ -8,9 +8,6 @@ export default class World {
     height;
     cellManager;
 
-    /** @type {Cell[]} */
-    cells = [];
-
     /** @type {THREE.Plane[]} */
     clippingPlanes = [];
 
@@ -92,14 +89,14 @@ export default class World {
      * @param {number} y
      */
     createCell(x, y) {
-        const existing = this.cells.find((cell) => cell.x === x && cell.y === y);
+        const existing = this.cellManager.cells.find((cell) => cell.x === x && cell.y === y);
 
         if (existing) {
             return existing;
         }
 
         const cell = new Cell(x, y);
-        this.cells.push(cell);
+        this.cellManager.cells.push(cell);
         return cell;
     }
 
@@ -130,7 +127,7 @@ export default class World {
         this.clippingPlanes[2].constant = -cy - this.cellManager.cellScale;
         this.clippingPlanes[3].constant = fy - this.cellManager.cellScale;
 
-        this.cells.forEach((cell) => {
+        this.cellManager.cells.forEach((cell) => {
             cell.visible = false;
         });
 
@@ -159,7 +156,7 @@ export default class World {
 
         // Render cells
 
-        this.cells.forEach((cell) => {
+        this.cellManager.cells.forEach((cell) => {
             if (!cell.visible) {
                 this.scene.remove(cell.mesh);
             } else if (cell.mesh !== undefined) {
